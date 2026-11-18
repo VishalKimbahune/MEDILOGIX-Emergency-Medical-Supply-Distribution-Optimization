@@ -1,0 +1,4 @@
+warehouse_id,name,area,city,latitude,longitude,storage_capacity_units,status,is_synthetic_hub
+WH-01,Pimpri Regional Medical Hub (Fictional Simulation Hub),Pimpri,Pimpri-Chinchwad,18.6298,73.7997,5000,active,True
+WH-02,Swargate Central Emergency Depot (Fictional Simulation Hub),Swargate,Pune,18.5018,73.8636,4500,active,True
+WH-03,Wagholi Eastern Logistics Hub (Fictional Simulation Hub),Wagholi,Pune,18.5808,73.9787,4000,active,True

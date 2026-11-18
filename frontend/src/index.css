@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900;
+  }
+}
+
+/* Ensure Leaflet map stays below modals/sticky headers */
+.leaflet-container {
+  z-index: 10;
+  font-family: inherit;
+}

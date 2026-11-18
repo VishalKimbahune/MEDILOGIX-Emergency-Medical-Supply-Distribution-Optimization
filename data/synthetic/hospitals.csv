@@ -1,0 +1,9 @@
+hospital_id,name,area,city,latitude,longitude,priority_level,bed_capacity,status,is_synthetic_profile
+HOSP-01,Shivajinagar Civic Trauma Center (Synthetic Profile),Shivajinagar,Pune,18.5308,73.8475,critical,420,active,True
+HOSP-02,Aundh District Care Hospital (Synthetic Profile),Aundh,Pune,18.559,73.8077,high,280,active,True
+HOSP-03,Baner Emergency Medical Unit (Synthetic Profile),Baner,Pune,18.559,73.7868,normal,180,active,True
+HOSP-04,Kothrud Multi-Specialty Clinic (Synthetic Profile),Kothrud,Pune,18.5074,73.8077,high,250,active,True
+HOSP-05,Kondhwa Community Health Center (Synthetic Profile),Kondhwa,Pune,18.4695,73.889,critical,310,active,True
+HOSP-06,Hadapsar Industrial Area Hospital (Synthetic Profile),Hadapsar,Pune,18.5089,73.926,high,260,active,True
+HOSP-07,Pimpri-Chinchwad General Unit (Synthetic Profile),Pimpri,Pimpri-Chinchwad,18.621,73.808,normal,220,active,True
+HOSP-08,Swargate Urban Referral Hospital (Synthetic Profile),Swargate,Pune,18.5045,73.8585,normal,200,active,True

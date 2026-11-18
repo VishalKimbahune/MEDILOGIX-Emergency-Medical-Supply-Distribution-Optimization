@@ -1,0 +1,13 @@
+inventory_id,warehouse_id,product_id,quantity_available,quantity_reserved,reorder_level,data_note
+INV-001,WH-01,PROD-01,150,0,30,Illustrative synthetic stock
+INV-002,WH-01,PROD-02,485,0,97,Illustrative synthetic stock
+INV-003,WH-01,PROD-03,120,0,24,Illustrative synthetic stock
+INV-004,WH-01,PROD-04,400,0,80,Illustrative synthetic stock
+INV-005,WH-02,PROD-01,130,0,26,Illustrative synthetic stock
+INV-006,WH-02,PROD-02,420,0,84,Illustrative synthetic stock
+INV-007,WH-02,PROD-03,100,0,20,Illustrative synthetic stock
+INV-008,WH-02,PROD-04,385,0,77,Illustrative synthetic stock
+INV-009,WH-03,PROD-01,100,0,20,Illustrative synthetic stock
+INV-010,WH-03,PROD-02,362,0,72,Illustrative synthetic stock
+INV-011,WH-03,PROD-03,90,0,20,Illustrative synthetic stock
+INV-012,WH-03,PROD-04,321,0,64,Illustrative synthetic stock
