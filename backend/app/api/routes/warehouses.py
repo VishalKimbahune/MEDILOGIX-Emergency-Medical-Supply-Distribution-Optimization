@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database.connection import get_db
@@ -53,8 +54,27 @@ def update_warehouse(
 
 @router.delete("/{warehouse_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_warehouse(warehouse_id: int, db: Session = Depends(get_db)) -> None:
-    """Delete a warehouse."""
+    """Delete a warehouse only when no dependent operational records reference it."""
     warehouse = warehouse_service.get_warehouse(db, warehouse_id)
     if not warehouse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Warehouse not found")
-    warehouse_service.delete_warehouse(db, warehouse)
+
+    deps = warehouse_service.get_warehouse_dependency_counts(db, warehouse_id)
+    if deps:
+        summary = ", ".join(f"{count} {name}" for name, count in deps.items())
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot delete warehouse '{warehouse.code}' because it has dependent records "
+                f"({summary}). Remove or reassign dependent records first."
+            ),
+        )
+
+    try:
+        warehouse_service.delete_warehouse(db, warehouse)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot delete warehouse '{warehouse.code}' due to existing foreign-key references.",
+        ) from exc

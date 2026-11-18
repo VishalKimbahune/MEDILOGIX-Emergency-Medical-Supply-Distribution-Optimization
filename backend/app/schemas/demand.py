@@ -15,7 +15,7 @@ class DemandBase(BaseModel):
     demand_code: str = Field(..., min_length=2, max_length=32, examples=["DEM-001"])
     hospital_id: int = Field(..., gt=0)
     product_id: int = Field(..., gt=0)
-    quantity_requested: int = Field(..., ge=0)
+    quantity_requested: int = Field(..., gt=0)
     priority_level: PriorityLevel = "normal"
     status: DemandStatus = "open"
     data_note: str | None = Field(default=None, max_length=200)
@@ -28,7 +28,7 @@ class DemandCreate(DemandBase):
 class DemandUpdate(BaseModel):
     """Schema for updating demand quantity, priority, or status."""
 
-    quantity_requested: int | None = Field(default=None, ge=0)
+    quantity_requested: int | None = Field(default=None, gt=0)
     priority_level: PriorityLevel | None = None
     status: DemandStatus | None = None
     data_note: str | None = Field(default=None, max_length=200)

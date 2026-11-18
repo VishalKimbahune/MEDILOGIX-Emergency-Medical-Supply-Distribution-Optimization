@@ -12,6 +12,7 @@ from app.schemas.demand import DemandCreate, DemandUpdate
 def list_demands(
     db: Session,
     hospital_id: int | None = None,
+    product_id: int | None = None,
     priority_level: str | None = None,
     status: str | None = None,
 ) -> list[Demand]:
@@ -19,6 +20,8 @@ def list_demands(
     stmt = select(Demand).order_by(Demand.demand_code)
     if hospital_id is not None:
         stmt = stmt.where(Demand.hospital_id == hospital_id)
+    if product_id is not None:
+        stmt = stmt.where(Demand.product_id == product_id)
     if priority_level:
         stmt = stmt.where(Demand.priority_level == priority_level)
     if status:

@@ -75,4 +75,9 @@ def apply_disaster_scenario(
         product_weight_kg=(
             dict(baseline.product_weight_kg) if baseline.product_weight_kg else None
         ),
+        warehouse_names=dict(baseline.warehouse_names),
+        hospital_names=dict(baseline.hospital_names),
+        product_names=dict(baseline.product_names),
+        product_units=dict(baseline.product_units),
+        route_metadata=dict(baseline.route_metadata),
     )

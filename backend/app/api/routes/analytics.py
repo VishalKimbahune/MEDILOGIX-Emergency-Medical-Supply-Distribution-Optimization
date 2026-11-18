@@ -52,7 +52,9 @@ def get_dashboard_summary(db: Session = Depends(get_db)) -> dict[str, Any]:
     )
 
     latest_run = db.scalar(
-        select(OptimizationRun).order_by(OptimizationRun.created_at.desc()).limit(1)
+        select(OptimizationRun)
+        .order_by(OptimizationRun.created_at.desc(), OptimizationRun.id.desc())
+        .limit(1)
     )
 
     inventory_utilization_pct = (

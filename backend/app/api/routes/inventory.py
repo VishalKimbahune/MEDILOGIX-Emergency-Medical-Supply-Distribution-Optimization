@@ -7,6 +7,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database.connection import get_db
+from app.models.product import Product
+from app.models.warehouse import Warehouse
 from app.schemas.inventory import InventoryCreate, InventoryResponse, InventoryUpdate
 from app.services import inventory_service
 
@@ -36,14 +38,24 @@ def get_inventory_item(inventory_id: int, db: Session = Depends(get_db)) -> Inve
 def create_inventory_item(
     payload: InventoryCreate, db: Session = Depends(get_db)
 ) -> InventoryResponse:
-    """Create a new inventory record."""
+    """Create a new inventory record with foreign-key validation."""
+    if not db.get(Warehouse, payload.warehouse_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Warehouse with id {payload.warehouse_id} does not exist",
+        )
+    if not db.get(Product, payload.product_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product with id {payload.product_id} does not exist",
+        )
     try:
         return inventory_service.create_inventory_item(db, payload)
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Duplicate inventory code or warehouse-product entry",
+            detail="Duplicate inventory code or warehouse-product entry already exists",
         ) from exc
 
 
@@ -58,7 +70,7 @@ def update_inventory_item(
     try:
         return inventory_service.update_inventory_item(db, item, payload)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.delete("/{inventory_id}", status_code=status.HTTP_204_NO_CONTENT)

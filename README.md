@@ -8,20 +8,24 @@ MEDILOGIX is a modular, full-stack decision-support platform built for B.Tech fi
 
 ---
 
-## Key Capabilities & Planned Modules
+## Key Capabilities & Development Progress
 
-1. **Emergency Command Dashboard** — Real-time overview of network capacity, open demand, critical alerts, map visualization, and optimization runs.
-2. **Warehouse Management** — Manage simulation hubs, capacities, and operational status.
-3. **Hospital Management** — Track hospitals, localities, and emergency priority levels (`critical`, `high`, `normal`).
-4. **Medical Product Management** — Manage essential supplies (Oxygen Cylinders, IV Fluid Cartons, Trauma Kits, Essential Medicine Boxes).
-5. **Inventory Management** — Track warehouse-level stock per medical product.
-6. **Hospital Demand Management** — Capture and prioritize hospital supply requests.
-7. **Transportation Optimization** — Multi-commodity Linear Programming (PuLP) to minimize distribution cost.
-8. **Emergency Priority Management** — Lexicographic shortage optimization prioritizing critical hospitals before high and normal tiers.
-9. **Delivery Route Optimization** — Shortest-path computation (NetworkX / Dijkstra) and Vehicle Routing Problem (Google OR-Tools) extensions.
-10. **Disaster Scenario Simulator** — Evaluate warehouse outages, road closures, and demand surges.
-11. **Optimization History** — Persist runs, allocations, and solver diagnostics.
-12. **Performance Analytics & Reports** — Fulfillment rates, cost metrics, and unmet demand breakdowns.
+- **Phase 1 (Complete)**: Modular FastAPI + SQLAlchemy backend, reproducible synthetic Pune & Pimpri-Chinchwad dataset generator & validator (`RANDOM_SEED = 42`), React + Vite + Tailwind CSS enterprise shell, interactive OpenStreetMap network map, and documentation.
+- **Phase 2 (Complete)**: Full end-to-end CRUD management modules for **Warehouses**, **Hospitals** (including live emergency priority escalation), **Inventory** (grouped & tabular views, low-stock alerts, stock adjustment confirmation), and **Hospital Demand Requests**, with strict foreign-key protection.
+- **Phase 3 (Complete)**: Full **Operations Research Optimization Engine** (`PuLP CBC`):
+  - **Multi-Commodity Transportation LP** (`POST /api/optimization/transportation`)
+  - **Sequential 4-Stage Lexicographic Priority Shortage Optimization** (`POST /api/optimization/priority`: Critical → High → Normal → Transport Cost)
+  - **Side-by-Side Model Comparison** (`POST /api/optimization/compare`) showing exact cost vs. priority-fulfillment trade-offs
+  - **Immutable Run History Inspection** (`GET /api/optimization/runs` & `GET /api/optimization/runs/{id}`)
+  - **Interactive Optimization Workbench** with scope selection, priority-tier analysis, sortable/filterable allocations with corridor metadata, 5 Recharts visualizations, and an Academic Mathematical Formulation panel
+- **Upcoming Phases**: Google OR-Tools Capacitated Vehicle Routing (CVRP), Overpass API road-network ingestion, and interactive Disaster Scenario Simulator comparisons.
+
+### Verified Baseline OR Results (`seed=42` Synthetic Dataset)
+
+| Model | Transport Cost (INR) | Critical Fulfillment | High Fulfillment | Normal Fulfillment |
+| :--- | :---: | :---: | :---: | :---: |
+| **Transportation Cost LP** | ₹134,932.40 | 91.68% (76 unmet) | 89.32% (108 unmet) | 99.27% (5 unmet) |
+| **4-Stage Lexicographic Priority LP** | ₹144,463.31 | **100.00% (0 unmet)** | **98.71% (13 unmet)** | 74.38% (176 unmet) |
 
 ---
 
