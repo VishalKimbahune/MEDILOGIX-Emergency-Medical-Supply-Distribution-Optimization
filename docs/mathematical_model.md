@@ -107,7 +107,24 @@ Executed via PuLP CBC on the seeded 3-warehouse, 8-hospital, 4-product, 24-route
 
 ---
 
-## 8. Decoupled Routing Modules (Phase 4 Roadmap)
+## 8. Decoupled Multi-Depot Capacitated Vehicle Routing (OR-Tools + OSM, Phases 4–5)
 
-- **Shortest Path (`shortest_path.py`)**: NetworkX Dijkstra shortest path supporting closed corridor exclusions.
-- **Capacitated VRP (`vehicle_routing.py`)**: Google OR-Tools skeleton scheduled for Phase 4.
+Phase 3 LP allocations (`Allocation` records) are passed unchanged into `backend/app/optimization/vehicle_routing.py`, solving an independent **Capacitated Vehicle Routing Problem (CVRP)** per warehouse depot $i \in I$:
+
+- **Nodes**: $V_i = \{0\} \cup S_i$, where $0$ is home warehouse $i$ and $S_i$ is the set of hospital stops (including capacity-feasible split stops when a hospital's shipment weight exceeds the depot's largest vehicle).
+- **Directed Road Costs**: When the cached Pune/PCMC OpenStreetMap directed `MultiDiGraph` is available, every ordered pair $(a, b) \in V_i \times V_i$ uses directed Dijkstra shortest-path distance $d_{a,b}^{\text{OSM}}$ (meters) and speed-profile estimated time $t_{a,b}^{\text{OSM}}$ (seconds), respecting one-way streets, HGV/delivery access restrictions, and closed OSM `way_id` exclusions.
+- **Configurable Objective**:
+  - `min_distance` *(default)*: $\min \sum_v \sum_{(a,b)} d_{a,b} \, y_{a,b,v} + F_d \sum_v z_v$
+  - `min_time`: $\min \sum_v \sum_{(a,b)} t_{a,b} \, y_{a,b,v} + F_t \sum_v z_v$
+- **Capacity & Conservation Constraints**:
+  - $\sum_{s \in \text{tour}(v)} \sum_{k} w_k q_{s,k} \le Q_v$ for every vehicle tour $v$.
+  - $\sum_{v, s \in S_{i,j}} q_{s,k} = x_{i,j,k}^*$ for every $(i, j, k)$ across routable hospitals (100% LP-to-VRP conservation).
+  - Unreachable connections in OSM mode are explicitly forbidden (`RemoveValue` on OR-Tools `NextVar`) and reported in `unreachable_hospitals` without substituting synthetic distances.
+
+---
+
+## 9. Mathematical Assumptions & Integrality Note
+
+- **Continuous LP Variables**: In Phase 3, $x_{i,j,k} \ge 0$ and $u_{j,k} \ge 0$ are continuous linear programming variables. While pure single-commodity network flow LPs with integer supplies/demands satisfy total unimodularity, adding multi-commodity side constraints (such as route weight capacities or normalized lexicographic tier-fraction constraints) does **not** universally guarantee integrality of continuous LP variables. MEDILOGIX therefore avoids blanket integrality claims and handles floating-point tolerances cleanly across both LP and VRP layers.
+- **1D Weight Capacity**: Vehicle routing enforces weight-based payload capacity (`kg`); cubic volumetric constraints and time windows (VRPTW) are left as documented future work.
+- **Assumed Speed Profiles**: OSM road geometry provides real street lengths; travel times are estimated from road-class speed profiles and do **not** represent live traffic.

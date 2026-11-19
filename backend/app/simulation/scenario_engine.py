@@ -1,16 +1,13 @@
 """
-Disaster Scenario Simulator Engine for MEDILOGIX.
+Disaster & Disruption Scenario Simulation Engine (Phase 4C).
 
-Applies controlled emergency disruptions to a baseline NetworkOptimizationInput
-before invoking the Operations Research solvers:
-- Warehouse outage / partial capacity degradation
-- Road corridor closure (e.g., urban flooding or highway blockage)
-- Hospital demand surge (e.g., mass-casualty incident or respiratory spike)
-
-TODO (Future Phases):
-- Support baseline vs. disrupted side-by-side comparison reports.
-- Support stochastic Monte Carlo disruption batches.
-- Persist scenario comparison snapshots in OptimizationRun.
+Applies isolated, reproducible emergency perturbations to a baseline
+NetworkOptimizationInput without mutating any live database records:
+- Warehouse outage (disables warehouse supply & all outgoing corridors)
+- Road corridor closure (marks corridors unavailable for LP & OR-Tools VRP)
+- Hospital demand spike (increases demand at selected hospitals by a configurable %)
+- Vehicle unavailability (tracked in config and enforced in Phase 4A VRP)
+- Combined multi-factor disruptions
 """
 
 from __future__ import annotations
@@ -22,13 +19,16 @@ from app.optimization.linear_programming import NetworkOptimizationInput
 
 @dataclass
 class DisasterScenarioConfig:
-    """Parameters defining a simulated logistics disruption."""
+    """Parameters defining a reproducible simulated logistics disruption."""
 
     name: str
     disabled_warehouses: set[str] = field(default_factory=set)
     closed_routes: set[tuple[str, str]] = field(default_factory=set)
     demand_multiplier: float = 1.0
     supply_multiplier: float = 1.0
+    demand_spike_hospitals: set[str] = field(default_factory=set)
+    demand_spike_pct: float = 0.0
+    disabled_vehicles: set[str] = field(default_factory=set)
 
 
 def apply_disaster_scenario(
@@ -36,8 +36,8 @@ def apply_disaster_scenario(
     scenario: DisasterScenarioConfig,
 ) -> NetworkOptimizationInput:
     """
-    Return a new NetworkOptimizationInput reflecting the specified disruption
-    without mutating the baseline dataset.
+    Return an isolated NetworkOptimizationInput reflecting all configured
+    disruptions without mutating the baseline input or database state.
     """
     active_warehouses = [
         wh for wh in baseline.warehouses if wh not in scenario.disabled_warehouses
@@ -49,10 +49,17 @@ def apply_disaster_scenario(
         if wh not in scenario.disabled_warehouses
     }
 
-    adjusted_demand = {
-        (hosp, prod): round(max(0.0, qty * scenario.demand_multiplier), 4)
-        for (hosp, prod), qty in baseline.demand.items()
-    }
+    spike_factor = 1.0 + max(0.0, float(scenario.demand_spike_pct)) / 100.0
+    apply_spike_to_all = (
+        scenario.demand_spike_pct > 0.0 and len(scenario.demand_spike_hospitals) == 0
+    )
+
+    adjusted_demand: dict[tuple[str, str], float] = {}
+    for (hosp, prod), qty in baseline.demand.items():
+        eff_mult = float(scenario.demand_multiplier)
+        if apply_spike_to_all or hosp in scenario.demand_spike_hospitals:
+            eff_mult *= spike_factor
+        adjusted_demand[(hosp, prod)] = round(max(0.0, qty * eff_mult), 4)
 
     adjusted_availability = dict(baseline.route_availability)
     for wh in baseline.warehouses:

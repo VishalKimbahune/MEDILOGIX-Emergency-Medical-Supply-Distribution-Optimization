@@ -7,6 +7,7 @@ Operations Research solvers, routing, disaster scenarios, and analytics.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -14,24 +15,43 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
+    admin,
     analytics,
+    auth,
+    delivery_portal,
     demands,
+    hospital_portal,
     hospitals,
     inventory,
+    notifications,
     optimization,
     products,
     routes,
     scenarios,
+    warehouse_portal,
     warehouses,
 )
 from app.core.config import get_settings
-from app.database.connection import check_database_connection
+from app.database.base import Base
+from app.database.connection import check_database_connection, engine
+from app.database.migrations import ensure_additive_columns
+from app import models as _models  # noqa: F401 - ensure all tables are registered
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Non-destructively ensure any newly added ORM tables and additive columns exist on startup."""
+    Base.metadata.create_all(bind=engine)
+    ensure_additive_columns(engine)
+    yield
+
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
+    lifespan=lifespan,
     description=(
         "Emergency Medical Supply Distribution Optimization Using Operations Research "
         "and Intelligent Decision Support (Pune & Pimpri-Chinchwad Simulation Scope)."
@@ -48,6 +68,12 @@ app.add_middleware(
 )
 
 # Register modular routers
+app.include_router(auth.router)
+app.include_router(admin.router)
+app.include_router(hospital_portal.router)
+app.include_router(warehouse_portal.router)
+app.include_router(delivery_portal.router)
+app.include_router(notifications.router)
 app.include_router(warehouses.router)
 app.include_router(hospitals.router)
 app.include_router(products.router)

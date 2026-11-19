@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.database.base import Base
 from app.database.connection import get_db
 from app.main import app
+from tests.auth_helpers import attach_admin_auth
 
 
 def _create_test_client() -> TestClient:
@@ -39,7 +40,9 @@ def _create_test_client() -> TestClient:
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    return TestClient(app)
+    client = TestClient(app)
+    attach_admin_auth(client, TestingSessionLocal)
+    return client
 
 
 def _seed_base_entities(client: TestClient) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:

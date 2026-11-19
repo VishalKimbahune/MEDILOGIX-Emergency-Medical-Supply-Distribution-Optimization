@@ -13,6 +13,9 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+utcnow = utc_now
+
+
 class Base(DeclarativeBase):
     """Declarative base class for all MEDILOGIX ORM models."""
 

@@ -6,13 +6,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_admin
 from app.database.connection import get_db
 from app.models.product import Product
 from app.models.warehouse import Warehouse
 from app.schemas.inventory import InventoryCreate, InventoryResponse, InventoryUpdate
 from app.services import inventory_service
 
-router = APIRouter(prefix="/api/inventory", tags=["Inventory"])
+router = APIRouter(
+    prefix="/api/inventory",
+    tags=["Inventory"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 @router.get("", response_model=list[InventoryResponse])

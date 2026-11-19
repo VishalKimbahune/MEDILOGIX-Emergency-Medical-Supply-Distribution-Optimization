@@ -6,11 +6,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_admin
 from app.database.connection import get_db
 from app.schemas.warehouse import WarehouseCreate, WarehouseResponse, WarehouseUpdate
 from app.services import warehouse_service
 
-router = APIRouter(prefix="/api/warehouses", tags=["Warehouses"])
+router = APIRouter(
+    prefix="/api/warehouses",
+    tags=["Warehouses"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 @router.get("", response_model=list[WarehouseResponse])

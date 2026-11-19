@@ -52,10 +52,12 @@ pnpm-debug.log*
 .ipynb_checkpoints/
 notebooks/.ipynb_checkpoints/
 
-# IDEs & OS
+# IDEs, OS & Temporary Files
 .vscode/
 .idea/
 *.swp
 *.swo
+*.tmp
+*.log
 .DS_Store
 Thumbs.db

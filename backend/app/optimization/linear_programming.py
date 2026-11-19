@@ -262,7 +262,7 @@ def extract_solution_details(
     if is_optimal:
         for (wh, hosp, prod), var in x_vars.items():
             qty = float(pulp.value(var) or 0.0)
-            if qty > 1e-6:
+            if round(qty, 4) > 0.0:
                 c_ijk = float(data.unit_cost.get((wh, hosp, prod), 0.0))
                 shipment_cost = qty * c_ijk
                 total_cost += shipment_cost

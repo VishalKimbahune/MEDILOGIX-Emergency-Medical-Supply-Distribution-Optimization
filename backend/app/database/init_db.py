@@ -13,17 +13,23 @@ from pathlib import Path
 from app.core.config import get_settings
 from app.database.base import Base
 from app.database.connection import SessionLocal, engine
+from app.database.migrations import ensure_additive_columns
 from app.models import (  # noqa: F401 - ensure all ORM models register with Base.metadata
     Allocation,
     Delivery,
+    DeliveryStop,
     Demand,
+    DispatchPlan,
     Hospital,
     Inventory,
     OptimizationRun,
     Product,
     Road,
     Scenario,
+    ScenarioRun,
+    ShipmentLine,
     Vehicle,
+    VehicleAssignment,
     Warehouse,
 )
 from app.utils.dataset_loader import seed_database_from_csv
@@ -35,6 +41,7 @@ logger = logging.getLogger(__name__)
 def init_db(seed: bool = True) -> dict[str, int]:
     """Create all tables and optionally load initial synthetic CSV data."""
     Base.metadata.create_all(bind=engine)
+    ensure_additive_columns(engine)
     logger.info("Database schema initialized successfully.")
 
     if not seed:

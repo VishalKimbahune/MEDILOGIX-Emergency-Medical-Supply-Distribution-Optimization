@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   Boxes,
@@ -77,6 +78,39 @@ export default function Dashboard() {
         </div>
       )}
 
+      {(summary?.pending_user_approvals_count > 0 || summary?.pending_order_approvals_count > 0) && (
+        <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {summary?.pending_user_approvals_count > 0 && (
+            <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+              <span>
+                <strong>{summary.pending_user_approvals_count}</strong> account registration(s)
+                pending admin approval.
+              </span>
+              <Link
+                to="/admin/users"
+                className="font-bold text-amber-900 underline hover:text-amber-700"
+              >
+                Review Users
+              </Link>
+            </div>
+          )}
+          {summary?.pending_order_approvals_count > 0 && (
+            <div className="flex items-center justify-between rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-900">
+              <span>
+                <strong>{summary.pending_order_approvals_count}</strong> hospital order(s) (
+                {formatNumber(summary.pending_approval_demand_units)} units) awaiting approval.
+              </span>
+              <Link
+                to="/admin/demands"
+                className="font-bold text-sky-900 underline hover:text-sky-700"
+              >
+                Review Orders
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Primary KPI Grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -104,9 +138,15 @@ export default function Dashboard() {
           sourceTag={tag}
         />
         <StatCard
-          title="Total Open Demand"
+          title="Current Open Demand"
           value={summary ? `${formatNumber(summary.total_open_demand_units)} units` : '—'}
-          subtitle="Unfulfilled & open requests"
+          subtitle={
+            summary?.total_partially_fulfilled_demand_units > 0
+              ? `+ ${formatNumber(summary.total_partially_fulfilled_demand_units)} partially fulfilled (${formatNumber(
+                  summary.total_actionable_demand_units
+                )} actionable)`
+              : 'Live open hospital requests'
+          }
           icon={ClipboardList}
           accent="orange"
           sourceTag={tag}
@@ -128,17 +168,23 @@ export default function Dashboard() {
           sourceTag={tag}
         />
         <StatCard
-          title="Demand Fulfillment"
+          title="Fulfillment (Latest Run)"
           value={
             summary?.latest_demand_fulfillment_pct !== null &&
             summary?.latest_demand_fulfillment_pct !== undefined
               ? formatPercent(summary.latest_demand_fulfillment_pct)
               : 'Not solved yet'
           }
-          subtitle={summary?.latest_run_code || 'Run OR optimizer to compute'}
+          subtitle={
+            summary?.latest_run_code
+              ? `${summary.latest_run_code} · ${formatNumber(
+                  summary.latest_run_total_allocated
+                )} / ${formatNumber(summary.latest_run_total_demand)} units`
+              : 'Run OR optimizer to compute'
+          }
           icon={TrendingUp}
           accent="emerald"
-          sourceTag={summary?.latest_run_code ? 'Latest Solver Run' : 'Pending Run'}
+          sourceTag={summary?.latest_run_code ? 'Run Snapshot' : 'Pending Run'}
         />
         <StatCard
           title="Distribution Cost"

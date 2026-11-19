@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
+  CheckCheck,
   CheckCircle2,
   ClipboardList,
   Clock,
@@ -9,6 +11,7 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  XCircle,
 } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/common/StatCard';
@@ -23,6 +26,7 @@ import {
   TextInput,
 } from '../components/forms/FormFields';
 import { demandService } from '../services/demandService';
+import { approveHospitalOrder, rejectHospitalOrder } from '../services/adminService';
 import { hospitalService } from '../services/hospitalService';
 import { inventoryService } from '../services/inventoryService';
 import { optimizationService } from '../services/optimizationService';
@@ -39,9 +43,11 @@ const PRIORITY_OPTIONS = [
 ];
 
 const STATUS_OPTIONS = [
-  { value: 'open', label: 'Open' },
+  { value: 'pending_approval', label: 'Pending Approval' },
+  { value: 'open', label: 'Open (Approved)' },
   { value: 'partially_fulfilled', label: 'Partially Fulfilled' },
   { value: 'fulfilled', label: 'Fulfilled' },
+  { value: 'rejected', label: 'Rejected' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
@@ -97,12 +103,23 @@ export default function Demands() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlStatus = searchParams.get('status') || 'all';
+
   // Filters
   const [search, setSearch] = useState('');
   const [hospitalFilter, setHospitalFilter] = useState('all');
   const [productFilter, setProductFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState(urlStatus);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Sync url param if changed externally
+  useEffect(() => {
+    if (searchParams.get('status')) {
+      setStatusFilter(searchParams.get('status'));
+    }
+  }, [searchParams]);
 
   // Create / Edit modal state
   const [formOpen, setFormOpen] = useState(false);
@@ -118,6 +135,59 @@ export default function Demands() {
   // Delete confirmation
   const [deletingDemand, setDeletingDemand] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  async function handleApproveOrder(demand) {
+    setActionLoading(true);
+    try {
+      await approveHospitalOrder(demand.id);
+      toast.showToast(`Order ${demand.demand_code} approved for LP optimization!`, 'success');
+      await loadData();
+    } catch (err) {
+      toast.showToast(extractApiError(err, 'Failed to approve order'), 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleRejectOrder(demand) {
+    const reason = window.prompt(
+      `Enter rejection reason for hospital order ${demand.demand_code}:`,
+      'Unable to fulfill due to current operational/inventory constraints'
+    );
+    if (!reason || reason.trim().length < 2) return;
+    setActionLoading(true);
+    try {
+      await rejectHospitalOrder(demand.id, reason.trim());
+      toast.showToast(`Order ${demand.demand_code} rejected`, 'info');
+      await loadData();
+    } catch (err) {
+      toast.showToast(extractApiError(err, 'Failed to reject order'), 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleApproveAll(pendingList) {
+    if (!pendingList || pendingList.length === 0) return;
+    if (!window.confirm(`Approve all ${pendingList.length} pending hospital orders for LP optimization?`)) {
+      return;
+    }
+    setActionLoading(true);
+    let approved = 0;
+    try {
+      for (const ord of pendingList) {
+        await approveHospitalOrder(ord.id);
+        approved++;
+      }
+      toast.showToast(`Approved ${approved} hospital orders. They are now eligible for optimization.`, 'success');
+      await loadData();
+    } catch (err) {
+      toast.showToast(extractApiError(err, 'Failed while approving pending orders'), 'error');
+      await loadData();
+    } finally {
+      setActionLoading(false);
+    }
+  }
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -176,10 +246,14 @@ export default function Demands() {
         fulfilledQty = req;
         pendingQty = 0;
         unmetQty = 0;
-      } else if (d.status === 'cancelled') {
+      } else if (d.status === 'cancelled' || d.status === 'rejected') {
         fulfilledQty = 0;
         pendingQty = 0;
         unmetQty = 0;
+      } else if (d.status === 'pending_approval' || d.approval_status === 'pending_approval') {
+        fulfilledQty = 0;
+        pendingQty = req;
+        unmetQty = req;
       } else {
         // open or partially_fulfilled
         if (hasSolverRun) {
@@ -196,6 +270,7 @@ export default function Demands() {
 
       return {
         ...d,
+        isPendingApproval: d.status === 'pending_approval' || d.approval_status === 'pending_approval',
         hospitalCode: hospital?.code || `HOSP-#${d.hospital_id}`,
         hospitalName: hospital?.name || `Hospital #${d.hospital_id}`,
         hospitalArea: hospital?.area || '',
@@ -209,20 +284,31 @@ export default function Demands() {
     });
   }, [demands, hospitalById, productById, latestRunInfo]);
 
+  const pendingApprovalOrders = useMemo(() => {
+    return enrichedDemands.filter((d) => d.isPendingApproval);
+  }, [enrichedDemands]);
+
   const filteredDemands = useMemo(() => {
     const q = search.trim().toLowerCase();
     return enrichedDemands.filter((d) => {
       if (hospitalFilter !== 'all' && String(d.hospital_id) !== hospitalFilter) return false;
       if (productFilter !== 'all' && String(d.product_id) !== productFilter) return false;
       if (priorityFilter !== 'all' && d.priority_level !== priorityFilter) return false;
-      if (statusFilter !== 'all' && d.status !== statusFilter) return false;
+      if (statusFilter !== 'all') {
+        if (statusFilter === 'pending_approval') {
+          if (!d.isPendingApproval) return false;
+        } else if (d.status !== statusFilter) {
+          return false;
+        }
+      }
       if (!q) return true;
       return (
         d.demand_code.toLowerCase().includes(q) ||
         d.hospitalCode.toLowerCase().includes(q) ||
         d.hospitalName.toLowerCase().includes(q) ||
         d.productCode.toLowerCase().includes(q) ||
-        d.productName.toLowerCase().includes(q)
+        d.productName.toLowerCase().includes(q) ||
+        (d.emergency_reason && d.emergency_reason.toLowerCase().includes(q))
       );
     });
   }, [
@@ -235,9 +321,12 @@ export default function Demands() {
   ]);
 
   const summary = useMemo(() => {
+    const pendingApprovalCount = demands.filter(
+      (d) => d.status === 'pending_approval' || d.approval_status === 'pending_approval'
+    ).length;
     const openCount = demands.filter((d) => d.status === 'open').length;
-    const criticalOpen = demands.filter(
-      (d) => d.status === 'open' && d.priority_level === 'critical'
+    const criticalCount = demands.filter(
+      (d) => (d.status === 'open' || d.status === 'pending_approval') && d.priority_level === 'critical'
     ).length;
     const totalPendingQty = enrichedDemands.reduce((s, d) => s + Number(d.pendingQty || 0), 0);
     const totalFulfilledQty = enrichedDemands.reduce(
@@ -246,8 +335,9 @@ export default function Demands() {
     );
     const totalUnmetQty = enrichedDemands.reduce((s, d) => s + Number(d.unmetQty || 0), 0);
     return {
+      pendingApprovalCount,
       openCount,
-      criticalOpen,
+      criticalCount,
       totalPendingQty,
       totalFulfilledQty,
       totalUnmetQty,
@@ -401,9 +491,21 @@ export default function Demands() {
   const columns = [
     {
       key: 'demand_code',
-      header: 'Code',
+      header: 'Order Code',
       sortable: true,
-      render: (r) => <span className="font-semibold text-slate-900">{r.demand_code}</span>,
+      render: (r) => (
+        <div className="flex items-center gap-1.5">
+          <span className="font-bold font-mono text-slate-900">{r.demand_code}</span>
+          {r.isPendingApproval && (
+            <span
+              className="inline-flex items-center rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 border border-amber-200"
+              title="Awaiting Admin Approval"
+            >
+              PENDING
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       key: 'hospitalCode',
@@ -424,6 +526,11 @@ export default function Demands() {
         <div>
           <span className="font-medium text-slate-900">{r.productName}</span>
           <span className="ml-1 text-xs text-slate-400">({r.productCode})</span>
+          {r.emergency_reason && (
+            <div className="text-[11px] text-amber-700 italic truncate max-w-xs" title={r.emergency_reason}>
+              Note: {r.emergency_reason}
+            </div>
+          )}
         </div>
       ),
     },
@@ -497,6 +604,30 @@ export default function Demands() {
       header: 'Actions',
       render: (r) => (
         <div className="flex items-center gap-1.5">
+          {r.isPendingApproval && (
+            <>
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => handleApproveOrder(r)}
+                title="Approve order for LP optimization"
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition"
+              >
+                <CheckCircle2 className="h-3 w-3" />
+                Approve
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => handleRejectOrder(r)}
+                title="Reject hospital order"
+                className="inline-flex items-center gap-1 rounded-lg border border-red-300 bg-white px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 hover:border-red-400 disabled:opacity-50 transition"
+              >
+                <XCircle className="h-3 w-3" />
+                Reject
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={() => openEditModal(r)}
@@ -552,31 +683,147 @@ export default function Demands() {
         </div>
       )}
 
+      {/* Prominent Pending Hospital Orders Review Queue */}
+      {pendingApprovalOrders.length > 0 && (
+        <div className="mb-6 rounded-2xl border-2 border-amber-300 bg-gradient-to-r from-amber-50/95 via-orange-50/80 to-amber-50/95 p-5 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-amber-200/80 pb-3 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm font-bold text-lg animate-pulse">
+                ⚡
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-amber-950 flex items-center gap-2">
+                  Hospital Emergency Orders Awaiting Admin Approval
+                  <span className="rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-extrabold text-amber-900">
+                    {pendingApprovalOrders.length} pending
+                  </span>
+                </h2>
+                <p className="text-xs text-amber-800">
+                  Hospitals submitted these emergency supply requests. Click <strong>Approve Order</strong> to make them immediately eligible for the OR-Tools LP Optimizer.
+                </p>
+              </div>
+            </div>
+            {pendingApprovalOrders.length > 1 && (
+              <button
+                type="button"
+                onClick={() => handleApproveAll(pendingApprovalOrders)}
+                disabled={actionLoading}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-emerald-700 disabled:opacity-50 transition"
+              >
+                <CheckCheck className="h-4 w-4" />
+                Approve All Pending ({pendingApprovalOrders.length})
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+            {pendingApprovalOrders.map((ord) => (
+              <div
+                key={ord.id}
+                className="rounded-xl border border-amber-200 bg-white p-4 shadow-sm flex flex-col justify-between hover:shadow-md transition"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                      {ord.demand_code}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <StatusBadge status={ord.priority_level} />
+                      <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                        PENDING
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-sm font-bold text-slate-900 mb-1">
+                    {ord.productName}
+                    <span className="ml-1 text-xs text-slate-500 font-normal">
+                      ({ord.productCode})
+                    </span>
+                  </div>
+
+                  <div className="text-xs text-slate-600 mb-2">
+                    <div className="font-medium text-slate-900">
+                      Quantity Requested:{' '}
+                      <span className="text-base font-extrabold text-teal-700">
+                        {formatNumber(ord.quantity_requested)}
+                      </span>{' '}
+                      {ord.productUnit}
+                    </div>
+                    <div className="font-medium text-slate-800 mt-1">
+                      🏥 {ord.hospitalName} ({ord.hospitalCode})
+                    </div>
+                    <div className="text-[11px] text-slate-500">{ord.hospitalArea}</div>
+                  </div>
+
+                  {ord.emergency_reason && (
+                    <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200/80 px-2.5 py-1.5 text-xs text-amber-950">
+                      <span className="font-bold text-amber-800">Clinical Reason:</span>{' '}
+                      "{ord.emergency_reason}"
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-slate-400">
+                    ID #{ord.id}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleRejectOrder(ord)}
+                      disabled={actionLoading}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 hover:border-red-400 disabled:opacity-50 transition"
+                    >
+                      <XCircle className="h-3.5 w-3.5" />
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApproveOrder(ord)}
+                      disabled={actionLoading}
+                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Approve Order
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* KPI Strip */}
       <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
+          title="Awaiting Approval"
+          value={formatNumber(summary.pendingApprovalCount)}
+          subtitle={
+            summary.pendingApprovalCount > 0
+              ? '⚡ Action required by Admin'
+              : 'All hospital orders reviewed'
+          }
+          icon={AlertTriangle}
+          accent={summary.pendingApprovalCount > 0 ? 'amber' : 'slate'}
+        />
+        <StatCard
           title="Open Requests"
           value={formatNumber(summary.openCount)}
-          subtitle={`Out of ${demands.length} total requests`}
+          subtitle={`Approved & ready for LP run`}
           icon={ClipboardList}
           accent="teal"
         />
         <StatCard
-          title="Critical Open Demands"
-          value={formatNumber(summary.criticalOpen)}
+          title="Critical Demands"
+          value={formatNumber(summary.criticalCount)}
           subtitle="Tier-1 emergency priority"
-          icon={AlertTriangle}
+          icon={Clock}
           accent="red"
         />
         <StatCard
-          title="Pending Units"
-          value={`${formatNumber(summary.totalPendingQty)} units`}
-          subtitle="Awaiting fulfillment"
-          icon={Clock}
-          accent="orange"
-        />
-        <StatCard
-          title="Fulfilled / Unmet (Latest Run)"
+          title="Fulfilled / Unmet"
           value={
             latestRunInfo.run_code
               ? `${formatNumber(summary.totalFulfilledQty)} / ${formatNumber(summary.totalUnmetQty)}`
@@ -591,6 +838,61 @@ export default function Demands() {
           accent="emerald"
           sourceTag={latestRunInfo.run_code ? 'Latest Solver Run' : 'Pending Run'}
         />
+      </div>
+
+      {/* Quick Status Navigation Tabs */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setStatusFilter('all')}
+          className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+            statusFilter === 'all'
+              ? 'bg-slate-900 text-white shadow-sm'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          All Requests ({demands.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setStatusFilter('pending_approval')}
+          className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+            statusFilter === 'pending_approval'
+              ? 'bg-amber-600 text-white shadow-sm'
+              : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
+          }`}
+        >
+          <span>⚡ Pending Approval</span>
+          <span
+            className={`rounded-full px-1.5 py-0.2 text-[10px] font-extrabold ${
+              statusFilter === 'pending_approval' ? 'bg-amber-800 text-white' : 'bg-amber-200 text-amber-900'
+            }`}
+          >
+            {summary.pendingApprovalCount}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setStatusFilter('open')}
+          className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+            statusFilter === 'open'
+              ? 'bg-teal-600 text-white shadow-sm'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          Approved & Open ({summary.openCount})
+        </button>
+        <button
+          type="button"
+          onClick={() => setStatusFilter('fulfilled')}
+          className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+            statusFilter === 'fulfilled'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          Fulfilled ({demands.filter((d) => d.status === 'fulfilled').length})
+        </button>
       </div>
 
       {/* Filter Toolbar */}
@@ -677,7 +979,8 @@ export default function Demands() {
         columns={columns}
         rows={filteredDemands}
         loading={loading}
-        defaultSortKey="demand_code"
+        defaultSortKey="isPendingApproval"
+        defaultSortDir="desc"
         emptyMessage="No demand requests match the selected filters."
       />
 

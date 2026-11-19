@@ -136,18 +136,30 @@ export default function Optimization() {
     loadContext();
   }, [loadContext]);
 
-  const openDemandCount = useMemo(
-    () => demands.filter((d) => d.status === 'open' || d.status === 'partially_fulfilled').length,
+  const actionableDemands = useMemo(
+    () => demands.filter((d) => d.status === 'open' || d.status === 'partially_fulfilled'),
     [demands]
   );
 
+  const openDemandCount = actionableDemands.length;
+
   const openDemandUnits = useMemo(
     () =>
-      demands
-        .filter((d) => d.status === 'open' || d.status === 'partially_fulfilled')
-        .reduce((sum, d) => sum + Number(d.quantity_requested || 0), 0),
-    [demands]
+      actionableDemands.reduce((sum, d) => sum + Number(d.quantity_requested || 0), 0),
+    [actionableDemands]
   );
+
+  const selectedScopeDemandUnits = useMemo(() => {
+    const selectedHospIds = new Set(
+      hospitals.filter((h) => selectedHospitals.includes(h.code)).map((h) => h.id)
+    );
+    const selectedProdIds = new Set(
+      products.filter((p) => selectedProducts.includes(p.code)).map((p) => p.id)
+    );
+    return actionableDemands
+      .filter((d) => selectedHospIds.has(d.hospital_id) && selectedProdIds.has(d.product_id))
+      .reduce((sum, d) => sum + Number(d.quantity_requested || 0), 0);
+  }, [actionableDemands, hospitals, products, selectedHospitals, selectedProducts]);
 
   function toggleSelection(code, currentList, setter) {
     if (currentList.includes(code)) {
@@ -556,7 +568,11 @@ export default function Optimization() {
               {products.length} Products
             </span>
             <span className="rounded-full bg-teal-50 px-2.5 py-0.5 font-semibold text-teal-800">
-              {openDemandCount} Open Demands ({formatNumber(openDemandUnits)} units)
+              {openDemandCount} Actionable Demands ({formatNumber(openDemandUnits)} units total
+              {selectedScopeDemandUnits !== openDemandUnits
+                ? ` · ${formatNumber(selectedScopeDemandUnits)} in current selection`
+                : ''}
+              )
             </span>
           </div>
         </div>
@@ -787,25 +803,29 @@ export default function Optimization() {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
-              title="Total Demand"
+              title="Demand Included in Run"
               value={`${formatNumber(activeResult.total_demand)} units`}
-              subtitle="Requested across selected hospitals"
+              subtitle={
+                activeResult.formulation_summary?.sets
+                  ? `${activeResult.formulation_summary.sets.hospitals_count} hospitals · ${activeResult.formulation_summary.sets.warehouses_count} warehouses · ${activeResult.formulation_summary.sets.products_count} products`
+                  : 'Immutable snapshot for this run'
+              }
               icon={Activity}
               accent="slate"
-              sourceTag="Solver Input"
+              sourceTag="Run Snapshot"
             />
             <StatCard
-              title="Planned Allocated"
+              title="Allocated Quantity"
               value={`${formatNumber(activeResult.total_allocated)} units`}
-              subtitle={`${formatPercent(activeResult.fulfillment_percentage)} overall fulfillment`}
+              subtitle={`${formatPercent(activeResult.fulfillment_percentage)} fulfillment for run`}
               icon={CheckCircle2}
               accent="emerald"
               sourceTag={activeResult.solver_status}
             />
             <StatCard
-              title="Unmet Demand"
+              title="Unmet Demand in Run"
               value={`${formatNumber(activeResult.total_unmet_demand)} units`}
-              subtitle="Residual supply shortage"
+              subtitle="Residual shortage in this run"
               icon={AlertTriangle}
               accent={activeResult.total_unmet_demand > 0 ? 'red' : 'emerald'}
               sourceTag="u[j,k]"

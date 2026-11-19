@@ -18,9 +18,10 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_admin
 from app.database.connection import get_db
 from app.models.allocation import Allocation
 from app.models.demand import Demand
@@ -30,7 +31,9 @@ from app.models.optimization_run import OptimizationRun
 from app.models.product import Product
 from app.models.road import Road
 from app.models.scenario import Scenario
+from app.models.user import User
 from app.models.warehouse import Warehouse
+from app.services import audit_service
 from app.optimization.linear_programming import (
     NetworkOptimizationInput,
     OptimizationOutcome,
@@ -53,7 +56,11 @@ from app.schemas.optimization import (
 )
 from app.simulation.scenario_engine import DisasterScenarioConfig, apply_disaster_scenario
 
-router = APIRouter(prefix="/api/optimization", tags=["Optimization"])
+router = APIRouter(
+    prefix="/api/optimization",
+    tags=["Optimization"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 def _build_formulation_summary(
@@ -213,7 +220,10 @@ def _build_network_input_from_db(
     inventories = list(db.scalars(select(Inventory)).all())
     demands = list(
         db.scalars(
-            select(Demand).where(Demand.status.in_(["open", "partially_fulfilled"]))
+            select(Demand).where(
+                Demand.status.in_(["open", "partially_fulfilled"]),
+                or_(Demand.approval_status == "approved", Demand.approval_status.is_(None)),
+            )
         ).all()
     )
     roads = list(db.scalars(select(Road)).all())
@@ -306,6 +316,7 @@ def _execute_and_persist(
     db: Session,
     request: OptimizationRequest,
     forced_model_type: str | None = None,
+    actor: User | None = None,
 ) -> OptimizationResultResponse:
     """Delegate solving to OR package and record immutable OptimizationRun + planned Allocations."""
     model_type = forced_model_type or request.model_type
@@ -392,18 +403,62 @@ def _execute_and_persist(
     db.flush()
 
     if outcome.solver_status == "Optimal":
+        affected_wh_ids: set[int] = set()
+        affected_hosp_ids: set[int] = set()
         for alloc in outcome.allocations:
+            wh_id = wh_code_to_id[alloc["warehouse_code"]]
+            hosp_id = hosp_code_to_id[alloc["hospital_code"]]
+            affected_wh_ids.add(wh_id)
+            affected_hosp_ids.add(hosp_id)
             db.add(
                 Allocation(
                     optimization_run_id=run_record.id,
-                    warehouse_id=wh_code_to_id[alloc["warehouse_code"]],
-                    hospital_id=hosp_code_to_id[alloc["hospital_code"]],
+                    warehouse_id=wh_id,
+                    hospital_id=hosp_id,
                     product_id=prod_code_to_id[alloc["product_code"]],
                     quantity_allocated=alloc["quantity_allocated"],
                     unmet_quantity=0.0,
                     transport_cost=alloc["transport_cost"],
                 )
             )
+        # Notify affected warehouse and hospital users
+        for wh_id in affected_wh_ids:
+            audit_service.notify_users_by_role(
+                db,
+                role="warehouse",
+                warehouse_id=wh_id,
+                title="New Optimization Allocation Plan",
+                message=f"Optimization run {run_code} ({outcome.model_type}) assigned outbound allocations for your warehouse.",
+                category="optimization",
+                entity_type="optimization_run",
+                entity_id=run_record.id,
+            )
+        for hosp_id in affected_hosp_ids:
+            audit_service.notify_users_by_role(
+                db,
+                role="hospital",
+                hospital_id=hosp_id,
+                title="Supplies Allocated to Your Hospital",
+                message=f"Optimization run {run_code} allocated supplies for your approved requests.",
+                category="optimization",
+                entity_type="optimization_run",
+                entity_id=run_record.id,
+            )
+
+    audit_service.log_audit_event(
+        db,
+        actor=actor,
+        action="optimization.executed",
+        target_entity="optimization_run",
+        target_id=run_record.id,
+        metadata={
+            "run_code": run_code,
+            "model_type": outcome.model_type,
+            "solver_status": outcome.solver_status,
+            "total_allocated": outcome.total_allocated,
+            "total_cost": outcome.total_cost,
+        },
+    )
     db.commit()
     db.refresh(run_record)
 
@@ -579,31 +634,48 @@ def get_latest_run_allocations(db: Session = Depends(get_db)) -> dict[str, Any]:
 def run_transportation_optimization(
     request: OptimizationRequest = OptimizationRequest(model_type="transportation_lp"),
     db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
 ) -> OptimizationResultResponse:
     """Execute and persist the multi-commodity transportation LP solver."""
-    return _execute_and_persist(db, request, forced_model_type="transportation_lp")
+    return _execute_and_persist(
+        db,
+        request,
+        forced_model_type="transportation_lp",
+        actor=admin_user,
+    )
 
 
 @router.post("/priority", response_model=OptimizationResultResponse)
 def run_priority_optimization(
     request: OptimizationRequest = OptimizationRequest(model_type="lexicographic_priority"),
     db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
 ) -> OptimizationResultResponse:
     """Execute and persist the 4-stage lexicographic priority-based shortage optimization solver."""
-    return _execute_and_persist(db, request, forced_model_type="lexicographic_priority")
+    return _execute_and_persist(
+        db,
+        request,
+        forced_model_type="lexicographic_priority",
+        actor=admin_user,
+    )
 
 
 @router.post("/compare", response_model=OptimizationComparisonResponse)
 def compare_optimization_models(
     request: OptimizationRequest = OptimizationRequest(),
     db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
 ) -> OptimizationComparisonResponse:
     """
     Execute both Transportation LP and Lexicographic Priority Optimization on the
     exact same network dataset and return structured side-by-side comparison metrics.
     """
-    transport_res = _execute_and_persist(db, request, forced_model_type="transportation_lp")
-    priority_res = _execute_and_persist(db, request, forced_model_type="lexicographic_priority")
+    transport_res = _execute_and_persist(
+        db, request, forced_model_type="transportation_lp", actor=admin_user
+    )
+    priority_res = _execute_and_persist(
+        db, request, forced_model_type="lexicographic_priority", actor=admin_user
+    )
 
     cost_diff = round(priority_res.total_cost - transport_res.total_cost, 2)
     cost_diff_pct = (

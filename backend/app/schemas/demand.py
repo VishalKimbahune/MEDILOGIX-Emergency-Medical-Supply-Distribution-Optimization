@@ -8,7 +8,14 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 PriorityLevel = Literal["critical", "high", "normal"]
-DemandStatus = Literal["open", "partially_fulfilled", "fulfilled", "cancelled"]
+DemandStatus = Literal[
+    "pending_approval",
+    "open",
+    "partially_fulfilled",
+    "fulfilled",
+    "rejected",
+    "cancelled",
+]
 
 
 class DemandBase(BaseModel):
@@ -38,6 +45,14 @@ class DemandResponse(DemandBase):
     """Schema returned for demand queries."""
 
     id: int
+    order_group_code: str | None = None
+    approval_status: str | None = None
+    emergency_reason: str | None = None
+    required_by: datetime | None = None
+    rejection_reason: str | None = None
+    submitted_by_user_id: int | None = None
+    reviewed_by_user_id: int | None = None
+    reviewed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -49,6 +49,8 @@ export function ToastProvider({ children }) {
     error: (title, message) => pushToast('error', title, message),
     warning: (title, message) => pushToast('warning', title, message),
     info: (title, message) => pushToast('info', title, message),
+    showToast: (title, type = 'info', message = '') =>
+      pushToast(TOAST_STYLES[type] ? type : 'info', title, message),
   };
 
   return (

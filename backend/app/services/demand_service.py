@@ -16,8 +16,8 @@ def list_demands(
     priority_level: str | None = None,
     status: str | None = None,
 ) -> list[Demand]:
-    """Return demand requests with optional filters."""
-    stmt = select(Demand).order_by(Demand.demand_code)
+    """Return demand requests with optional filters, ordered by newest first."""
+    stmt = select(Demand).order_by(Demand.id.desc())
     if hospital_id is not None:
         stmt = stmt.where(Demand.hospital_id == hospital_id)
     if product_id is not None:
@@ -47,6 +47,10 @@ def update_demand(db: Session, demand: Demand, payload: DemandUpdate) -> Demand:
     """Update an existing hospital demand request."""
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(demand, field, value)
+    if payload.status == "open" and demand.approval_status == "pending_approval":
+        demand.approval_status = "approved"
+    elif payload.status == "rejected":
+        demand.approval_status = "rejected"
     db.commit()
     db.refresh(demand)
     return demand

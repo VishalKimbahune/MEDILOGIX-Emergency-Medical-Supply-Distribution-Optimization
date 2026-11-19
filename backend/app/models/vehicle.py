@@ -21,7 +21,11 @@ class Vehicle(Base, TimestampMixin):
     vehicle_type: Mapped[str] = mapped_column(String(64), nullable=False, default="medical_van")
     capacity_kg: Mapped[float] = mapped_column(Float, nullable=False, default=1500.0)
     status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="available")
+    assigned_driver_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
+    )
 
     # Relationships
     warehouse = relationship("Warehouse", back_populates="vehicles")
+    assigned_driver = relationship("User")
     deliveries = relationship("Delivery", back_populates="vehicle")

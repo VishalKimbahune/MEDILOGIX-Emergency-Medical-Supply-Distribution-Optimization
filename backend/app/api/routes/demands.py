@@ -6,13 +6,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_admin
 from app.database.connection import get_db
 from app.models.hospital import Hospital
 from app.models.product import Product
 from app.schemas.demand import DemandCreate, DemandResponse, DemandUpdate
 from app.services import demand_service
 
-router = APIRouter(prefix="/api/demands", tags=["Demands"])
+router = APIRouter(
+    prefix="/api/demands",
+    tags=["Demands"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 @router.get("", response_model=list[DemandResponse])
